@@ -113,6 +113,17 @@ func runTests() async throws {
     let extractedImages = try pdfProcessor.convertToImages(sourceURL: sourcePDFURL, targetType: .png)
     assertTest(extractedImages.count == 3, "Convert PDF pages to PNG (count: \(extractedImages.count))")
 
+    // 4. AppVersion Tests
+    print("\n[4] Testing AppVersion...")
+    let v1 = AppVersion("v1.0.2")
+    let v2 = AppVersion("1.0.3")
+    let v3 = AppVersion("v1.1.0")
+    let v4 = AppVersion("1.0.2")
+    assertTest(v1 == v4, "AppVersion equality: v1.0.2 == 1.0.2")
+    assertTest(v1 < v2, "AppVersion comparison: 1.0.2 < 1.0.3")
+    assertTest(v2 < v3, "AppVersion comparison: 1.0.3 < 1.1.0")
+    assertTest(AppVersion("v1.0.9") < AppVersion("v1.0.10"), "AppVersion comparison: 1.0.9 < 1.0.10")
+
     print("\n========================================")
     print("  Test Results: \(passed) Passed, \(failed) Failed")
     print("========================================")
