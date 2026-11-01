@@ -28,10 +28,17 @@ macOS 제스처 기반 100% 로컬 파일 변환 및 조작 유틸리티입니�
 
 ## 🚀 설치 및 사용 방법
 
-### 1. 설치
-1. GitHub 저장소의 [Releases](../../releases) 페이지에서 최신 `RadialDrop.zip`을 다운로드합니다.
+### 1. Homebrew로 설치 (가장 추천)
+터미널에서 아래 한 줄만 입력하면 자동으로 다운로드 및 설치됩니다:
+
+```bash
+brew install --cask minsukwak0208/tap/radialdrop
+```
+
+### 2. 수동 다운로드 설치
+1. [Releases](https://github.com/minsukwak0208/RadialDrop/releases/latest) 페이지에서 `RadialDrop.zip`을 다운로드합니다.
 2. 압축을 풀고 `RadialDrop.app`을 `/Applications` (응용 프로그램) 폴더로 이동합니다.
-3. 앱을 실행합니다. (메뉴바에 원형 아이콘이 나타납니다.)
+3. 앱을 실행합니다. (상단 메뉴바에 원형 아이콘이 나타납니다.)
 
 ### 2. 필수 권한 설정
 - 글로벌 마우스 드래그 및 `Shift` 키 조합을 감지하기 위해 **손쉬운 사용(Accessibility)** 권한이 필요합니다.
