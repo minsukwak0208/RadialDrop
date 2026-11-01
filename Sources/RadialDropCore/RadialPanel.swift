@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
+import UserNotifications
 
 /// Custom NSView that registers for drag types and forwards all dragging destination events to RadialPanel.
 public final class RadialDropView: NSView {
@@ -54,9 +55,9 @@ public final class RadialDropView: NSView {
 @MainActor
 public final class RadialPanel: NSPanel {
     private var dropView: RadialDropView!
-    private var hostingView: NSHostingView<AnyView>?
-    private var currentItems: [RadialItem] = []
-    private var hoveredIndex: Int? = nil
+    private var hostingView: NSHostingView<RadialWheelView>?
+    public let viewModel = RadialWheelViewModel()
+
     private var sourceURLs: [URL] = []
     public private(set) var isProcessing = false
 
@@ -64,6 +65,18 @@ public final class RadialPanel: NSPanel {
     private let outerRadius: CGFloat = 135
 
     public var onFileConverted: ((URL, URL) -> Void)?
+
+    public var isSoundEnabled: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: "RadialDrop_SoundEnabled") == nil {
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: "RadialDrop_SoundEnabled")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "RadialDrop_SoundEnabled")
+        }
+    }
 
     public init() {
         let contentRect = NSRect(x: 0, y: 0, width: 300, height: 300)
@@ -84,34 +97,25 @@ public final class RadialPanel: NSPanel {
 
         dropView = RadialDropView(frame: contentRect)
         dropView.panel = self
+
+        // Setup persistent SwiftUI hosting view bound to viewModel
+        viewModel.onSelect = { [weak self] item in
+            self?.handleSelection(item: item)
+        }
+
+        let hosting = NSHostingView(rootView: RadialWheelView(viewModel: viewModel))
+        hosting.frame = dropView.bounds
+        hosting.autoresizingMask = [.width, .height]
+        dropView.addSubview(hosting)
+        self.hostingView = hosting
+
         self.contentView = dropView
     }
 
     public func configure(items: [RadialItem], sourceURLs: [URL] = []) {
-        self.currentItems = items
+        self.viewModel.items = items
+        self.viewModel.hoveredIndex = nil
         self.sourceURLs = sourceURLs
-        self.hoveredIndex = nil
-        updateContentView()
-    }
-
-    private func updateContentView() {
-        let view = RadialWheelView(
-            items: currentItems,
-            hoveredIndex: hoveredIndex,
-            onSelect: { [weak self] item in
-                self?.handleSelection(item: item)
-            }
-        )
-
-        if let hosting = hostingView {
-            hosting.rootView = AnyView(view)
-        } else {
-            let hosting = NSHostingView(rootView: AnyView(view))
-            hosting.frame = dropView.bounds
-            hosting.autoresizingMask = [.width, .height]
-            dropView.addSubview(hosting)
-            self.hostingView = hosting
-        }
     }
 
     public func show(at screenPoint: CGPoint, items: [RadialItem], urls: [URL]) {
@@ -127,7 +131,7 @@ public final class RadialPanel: NSPanel {
 
     public func hide() {
         orderOut(nil)
-        hoveredIndex = nil
+        viewModel.hoveredIndex = nil
         sourceURLs.removeAll()
         isProcessing = false
     }
@@ -151,12 +155,11 @@ public final class RadialPanel: NSPanel {
     public func handleDraggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
         let localPoint = dropView.convert(sender.draggingLocation, from: nil)
         updateHover(for: localPoint)
-        return hoveredIndex != nil ? .copy : []
+        return viewModel.hoveredIndex != nil ? .copy : []
     }
 
     public func handleDraggingExited(_ sender: (any NSDraggingInfo)?) {
-        hoveredIndex = nil
-        updateContentView()
+        viewModel.hoveredIndex = nil
     }
 
     public func handleDraggingEnded(_ sender: any NSDraggingInfo) {
@@ -166,12 +169,12 @@ public final class RadialPanel: NSPanel {
     }
 
     public func handlePerformDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-        guard let hovered = hoveredIndex, hovered >= 0, hovered < currentItems.count else {
+        guard let hovered = viewModel.hoveredIndex, hovered >= 0, hovered < viewModel.items.count else {
             hide()
             return false
         }
 
-        let selectedItem = currentItems[hovered]
+        let selectedItem = viewModel.items[hovered]
         let extractedURLs = getDraggedURLs(from: sender) ?? []
         let urlsToProcess = !sourceURLs.isEmpty ? sourceURLs : extractedURLs
 
@@ -197,7 +200,7 @@ public final class RadialPanel: NSPanel {
             var clockAngle = 90.0 - degrees
             if clockAngle < 0 { clockAngle += 360.0 }
 
-            let count = currentItems.count
+            let count = viewModel.items.count
             if count > 0 {
                 let sliceAngle = 360.0 / Double(count)
                 let index = Int(clockAngle / sliceAngle) % count
@@ -205,9 +208,12 @@ public final class RadialPanel: NSPanel {
             }
         }
 
-        if newHovered != hoveredIndex {
-            hoveredIndex = newHovered
-            updateContentView()
+        if newHovered != viewModel.hoveredIndex {
+            // Trigger trackpad haptic pulse on entering a slice
+            if let newIdx = newHovered, newIdx != viewModel.hoveredIndex {
+                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+            }
+            viewModel.hoveredIndex = newHovered
         }
     }
 
@@ -223,6 +229,7 @@ public final class RadialPanel: NSPanel {
         let pdfProcessor = PDFProcessor()
         let mediaConverter = MediaConverter()
         let hwpConverter = HWPConverter()
+        let soundEnabled = self.isSoundEnabled
 
         Task.detached(priority: .userInitiated) {
             for url in urls {
@@ -293,7 +300,9 @@ public final class RadialPanel: NSPanel {
                     // Success Feedback for generated files
                     if !outputURLs.isEmpty {
                         await MainActor.run {
-                            NSSound(named: "Glass")?.play()
+                            if soundEnabled {
+                                NSSound(named: "Glass")?.play()
+                            }
                             for outURL in outputURLs {
                                 print("[RadialDrop] Output created: \(outURL.path)")
                                 self.deliverNotification(sourceURL: url, destinationURL: outURL)
@@ -313,11 +322,19 @@ public final class RadialPanel: NSPanel {
     }
 
     private func deliverNotification(sourceURL: URL, destinationURL: URL) {
-        let notification = NSUserNotification()
-        notification.title = "RadialDrop Complete"
-        notification.informativeText = "\(destinationURL.lastPathComponent)"
-        notification.soundName = NSUserNotificationDefaultSoundName
-        NSUserNotificationCenter.default.deliver(notification)
+        let content = UNMutableNotificationContent()
+        content.title = "RadialDrop Complete"
+        content.body = destinationURL.lastPathComponent
+        if isSoundEnabled {
+            content.sound = .default
+        }
+
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
     }
 
     private func getDraggedURLs(from info: any NSDraggingInfo) -> [URL]? {

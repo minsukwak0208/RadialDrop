@@ -1,22 +1,31 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-public struct RadialWheelView: View {
-    public let items: [RadialItem]
-    public let hoveredIndex: Int?
-    public let onSelect: (RadialItem) -> Void
-
-    private let innerRadius: CGFloat = 45
-    private let outerRadius: CGFloat = 135
+@MainActor
+public final class RadialWheelViewModel: ObservableObject {
+    @Published public var items: [RadialItem]
+    @Published public var hoveredIndex: Int?
+    public var onSelect: ((RadialItem) -> Void)?
 
     public init(
-        items: [RadialItem],
-        hoveredIndex: Int?,
-        onSelect: @escaping (RadialItem) -> Void
+        items: [RadialItem] = [],
+        hoveredIndex: Int? = nil,
+        onSelect: ((RadialItem) -> Void)? = nil
     ) {
         self.items = items
         self.hoveredIndex = hoveredIndex
         self.onSelect = onSelect
+    }
+}
+
+public struct RadialWheelView: View {
+    @ObservedObject public var viewModel: RadialWheelViewModel
+
+    private let innerRadius: CGFloat = 45
+    private let outerRadius: CGFloat = 135
+
+    public init(viewModel: RadialWheelViewModel) {
+        self.viewModel = viewModel
     }
 
     public var body: some View {
@@ -28,7 +37,7 @@ public struct RadialWheelView: View {
                 .blur(radius: 8)
 
             // Slices
-            ForEach(0..<items.count, id: \.self) { index in
+            ForEach(0..<viewModel.items.count, id: \.self) { index in
                 sliceView(index: index)
             }
 
@@ -51,7 +60,7 @@ public struct RadialWheelView: View {
                         Image(systemName: "arrow.triangle.swap")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.orange)
-                        Text("Tangerine")
+                        Text("RadialDrop")
                             .font(.system(size: 8, weight: .bold, design: .rounded))
                             .foregroundColor(.white.opacity(0.8))
                     }
@@ -62,12 +71,12 @@ public struct RadialWheelView: View {
 
     @ViewBuilder
     private func sliceView(index: Int) -> some View {
-        let count = max(items.count, 1)
+        let count = max(viewModel.items.count, 1)
         let sliceAngle = 360.0 / Double(count)
         let startAngle = Angle(degrees: Double(index) * sliceAngle - 90.0)
         let endAngle = Angle(degrees: Double(index + 1) * sliceAngle - 90.0)
         let midAngle = Angle(degrees: (startAngle.degrees + endAngle.degrees) / 2.0)
-        let isHovered = (hoveredIndex == index)
+        let isHovered = (viewModel.hoveredIndex == index)
 
         ZStack {
             // Slice wedge shape
@@ -103,7 +112,7 @@ public struct RadialWheelView: View {
                 )
                 .stroke(isHovered ? Color.white.opacity(0.8) : Color.white.opacity(0.12), lineWidth: isHovered ? 2 : 1)
             )
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isHovered)
+            .animation(.spring(response: 0.22, dampingFraction: 0.72), value: isHovered)
 
             // Content (Icon + Label)
             let iconPos = pointOnCircle(
@@ -112,11 +121,11 @@ public struct RadialWheelView: View {
             )
 
             VStack(spacing: 3) {
-                Image(systemName: items[index].iconName)
+                Image(systemName: viewModel.items[index].iconName)
                     .font(.system(size: isHovered ? 20 : 18, weight: .bold))
                     .foregroundColor(isHovered ? .white : .white.opacity(0.9))
 
-                Text(items[index].title)
+                Text(viewModel.items[index].title)
                     .font(.system(size: isHovered ? 12 : 11, weight: .bold, design: .rounded))
                     .foregroundColor(isHovered ? .white : .white.opacity(0.85))
             }

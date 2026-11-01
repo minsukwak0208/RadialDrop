@@ -2,6 +2,7 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 import PDFKit
+import AppKit
 
 public enum ConversionError: LocalizedError {
     case fileNotFound(URL)
@@ -31,6 +32,21 @@ public enum ConversionError: LocalizedError {
 
 public struct ImageConverter: Sendable {
     public init() {}
+
+    /// Dynamically locates an executable binary in PATH or standard system directories.
+    public static func findBinary(named name: String) -> String? {
+        let envPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        var searchPaths = envPath.split(separator: ":").map { String($0) }
+        searchPaths.append(contentsOf: ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"])
+
+        for path in searchPaths {
+            let candidate = URL(fileURLWithPath: path).appendingPathComponent(name).path
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+        }
+        return nil
+    }
 
     /// Converts an image file at `sourceURL` to the target format specified by `targetType`.
     @discardableResult
@@ -77,12 +93,11 @@ public struct ImageConverter: Sendable {
         return destinationURL
     }
 
-    /// Compresses an image by reducing quality / resolution.
+    /// High-performance memory-efficient image compression (direct CGImage pipeline without TIFF serialization).
     @discardableResult
     public func compress(sourceURL: URL, quality: Double = 0.5) throws -> URL {
-        guard let image = NSImage(contentsOf: sourceURL),
-              let tiff = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiff) else {
+        guard let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
             throw ConversionError.invalidSourceImage(sourceURL)
         }
 
@@ -91,6 +106,7 @@ public struct ImageConverter: Sendable {
         let ext = sourceURL.pathExtension.isEmpty ? "jpg" : sourceURL.pathExtension
         let destinationURL = directory.appendingPathComponent("\(baseName)_compressed.\(ext)")
 
+        let bitmap = NSBitmapImageRep(cgImage: cgImage)
         let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: quality])
         guard let data = jpegData ?? bitmap.representation(using: .png, properties: [:]) else {
             throw ConversionError.destinationFinalizationFailed(destinationURL)
@@ -123,7 +139,7 @@ public struct ImageConverter: Sendable {
             throw ConversionError.destinationCreationFailed(destinationURL)
         }
 
-        // Add pure image without any metadata properties
+        // Add pure image without any metadata dictionary
         CGImageDestinationAddImage(destination, cgImage, nil)
 
         guard CGImageDestinationFinalize(destination) else {
@@ -133,13 +149,11 @@ public struct ImageConverter: Sendable {
         return destinationURL
     }
 
-    /// Converts an image to grayscale.
+    /// Converts an image to grayscale using CoreGraphics DeviceGray color space.
     @discardableResult
     public func convertToGrayscale(sourceURL: URL) throws -> URL {
-        guard let image = NSImage(contentsOf: sourceURL),
-              let tiff = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiff),
-              let cgImage = bitmap.cgImage else {
+        guard let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
             throw ConversionError.invalidSourceImage(sourceURL)
         }
 
@@ -189,9 +203,8 @@ public struct ImageConverter: Sendable {
     /// Converts an image to WebP using available local binary (cwebp or ffmpeg).
     private func convertImageToWebP(sourceURL: URL, quality: Double) throws -> URL {
         let destinationURL = generateUniqueDestinationURL(for: sourceURL, newExtension: "webp")
-        let candidatePaths = ["/opt/homebrew/bin/cwebp", "/usr/local/bin/cwebp", "/usr/bin/cwebp"]
 
-        if let cwebpBinary = candidatePaths.first(where: { FileManager.default.fileExists(atPath: $0) }) {
+        if let cwebpBinary = Self.findBinary(named: "cwebp") {
             let qualityInt = max(1, min(100, Int(quality * 100)))
             let process = Process()
             process.executableURL = URL(fileURLWithPath: cwebpBinary)
@@ -206,8 +219,7 @@ public struct ImageConverter: Sendable {
         }
 
         // Fallback to ffmpeg
-        let ffmpegPaths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"]
-        if let ffmpegBinary = ffmpegPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) {
+        if let ffmpegBinary = Self.findBinary(named: "ffmpeg") {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: ffmpegBinary)
             process.arguments = ["-y", "-i", sourceURL.path, destinationURL.path]
@@ -225,16 +237,15 @@ public struct ImageConverter: Sendable {
 
     /// Converts an image to a single-page PDF document.
     private func convertImageToPDF(sourceURL: URL) throws -> URL {
-        guard let nsImage = NSImage(contentsOf: sourceURL),
-              let tiffData = nsImage.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData),
-              let cgImage = bitmap.cgImage else {
+        guard let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
             throw ConversionError.invalidSourceImage(sourceURL)
         }
 
         let destinationURL = generateUniqueDestinationURL(for: sourceURL, newExtension: "pdf")
         let pdfDocument = PDFDocument()
-        let pdfPage = PDFPage(image: NSImage(cgImage: cgImage, size: nsImage.size))
+        let imageSize = NSSize(width: cgImage.width, height: cgImage.height)
+        let pdfPage = PDFPage(image: NSImage(cgImage: cgImage, size: imageSize))
 
         if let page = pdfPage {
             pdfDocument.insert(page, at: 0)

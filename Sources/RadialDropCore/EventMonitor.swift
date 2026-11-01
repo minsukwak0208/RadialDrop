@@ -25,14 +25,15 @@ public final class EventMonitor {
         _ = AXIsProcessTrustedWithOptions(options)
     }
 
-    /// Starts monitoring for Shift + Drag events.
+    /// Starts monitoring for Shift + Drag and ESC events.
     public func start() {
         stop()
 
         let eventMask: NSEvent.EventTypeMask = [
             .leftMouseDragged,
             .flagsChanged,
-            .leftMouseUp
+            .leftMouseUp,
+            .keyDown
         ]
 
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: eventMask) { [weak self] event in
@@ -63,6 +64,12 @@ public final class EventMonitor {
     }
 
     private func handleEvent(_ event: NSEvent) {
+        // Pressing Escape (keyCode 53) cancels/dismisses the wheel immediately
+        if event.type == .keyDown && event.keyCode == 53 {
+            dismissWheel()
+            return
+        }
+
         let isLeftMouseDown = (NSEvent.pressedMouseButtons & 1) != 0
         let modifiers = NSEvent.modifierFlags
         let isShiftDown = modifiers.contains(.shift)

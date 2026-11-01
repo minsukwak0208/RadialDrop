@@ -1,20 +1,23 @@
 import AppKit
 import RadialDropCore
+import UserNotifications
 
 @MainActor
 public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var statusMenuItem: NSMenuItem!
     private var permissionMenuItem: NSMenuItem!
+    private var soundMenuItem: NSMenuItem!
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
-        // Prevent app from showing in the Dock (agent app)
         NSApp.setActivationPolicy(.accessory)
+
+        // Request notification authorization
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
 
         setupStatusBar()
         checkPermissionsAndStart()
 
-        // Set callback for successful conversion
         EventMonitor.shared.panel.onFileConverted = { source, destination in
             print("[RadialDrop] Successfully converted: \(source.lastPathComponent) -> \(destination.lastPathComponent)")
         }
@@ -30,7 +33,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
 
-        let titleItem = NSMenuItem(title: "RadialDrop (Tangerine)", action: nil, keyEquivalent: "")
+        let titleItem = NSMenuItem(title: "RadialDrop (v1.0.1)", action: nil, keyEquivalent: "")
         titleItem.isEnabled = false
         menu.addItem(titleItem)
 
@@ -48,6 +51,16 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
+        // Sound Toggle Menu Item
+        let isSoundOn = EventMonitor.shared.panel.isSoundEnabled
+        soundMenuItem = NSMenuItem(
+            title: isSoundOn ? "✓ Sound Effects" : "Sound Effects (Muted)",
+            action: #selector(toggleSoundClicked),
+            keyEquivalent: "s"
+        )
+        soundMenuItem.target = self
+        menu.addItem(soundMenuItem)
+
         let testWheelItem = NSMenuItem(
             title: "Show Demo Wheel at Cursor",
             action: #selector(showDemoWheelClicked),
@@ -59,7 +72,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem.separator())
 
         let quitItem = NSMenuItem(
-            title: "Quit",
+            title: "Quit RadialDrop",
             action: #selector(quitClicked),
             keyEquivalent: "q"
         )
@@ -79,14 +92,18 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             statusMenuItem.title = "⚠ Needs Accessibility Permission"
             permissionMenuItem.isHidden = false
             EventMonitor.requestAccessibilityPermissions()
-            // Even if not initially trusted, start monitor so it catches events once granted
             EventMonitor.shared.start()
         }
     }
 
+    @objc private func toggleSoundClicked() {
+        let current = EventMonitor.shared.panel.isSoundEnabled
+        EventMonitor.shared.panel.isSoundEnabled = !current
+        soundMenuItem.title = (!current) ? "✓ Sound Effects" : "Sound Effects (Muted)"
+    }
+
     @objc private func requestPermissionClicked() {
         EventMonitor.requestAccessibilityPermissions()
-        // Open System Settings -> Privacy & Security -> Accessibility
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
         }

@@ -5,12 +5,7 @@ public struct MediaConverter: Sendable {
     public init() {}
 
     private var ffmpegPath: String? {
-        let candidates = [
-            "/opt/homebrew/bin/ffmpeg",
-            "/usr/local/bin/ffmpeg",
-            "/usr/bin/ffmpeg"
-        ]
-        return candidates.first(where: { FileManager.default.fileExists(atPath: $0) })
+        return ImageConverter.findBinary(named: "ffmpeg")
     }
 
     /// Converts video/audio file to target format using ffmpeg.
@@ -28,17 +23,14 @@ public struct MediaConverter: Sendable {
         var arguments = ["-y", "-i", sourceURL.path]
 
         if targetType == .gif {
-            // High-quality palette/scaled GIF
             arguments += ["-vf", "fps=12,scale=480:-1:flags=lanczos", destinationURL.path]
         } else if targetType == .mp3 {
-            // Audio extraction or transcode to MP3
             arguments += ["-vn", "-c:a", "libmp3lame", "-q:a", "2", destinationURL.path]
         } else if targetType == .wav {
             arguments += ["-vn", destinationURL.path]
         } else if targetType == .mpeg4Audio {
             arguments += ["-vn", "-c:a", "aac", destinationURL.path]
         } else {
-            // Generic video container (mp4, mov)
             arguments += ["-c:v", "libx264", "-c:a", "aac", destinationURL.path]
         }
 
