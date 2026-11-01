@@ -21,6 +21,11 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$DIR/.build/release/RadialDrop" "$MACOS_DIR/RadialDrop"
 chmod +x "$MACOS_DIR/RadialDrop"
 
+# Copy AppIcon if present
+if [ -f "$DIR/AppIcon.icns" ]; then
+    cp "$DIR/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
+fi
+
 # Create Info.plist
 cat <<EOF > "$CONTENTS_DIR/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
@@ -31,6 +36,8 @@ cat <<EOF > "$CONTENTS_DIR/Info.plist"
     <string>en</string>
     <key>CFBundleExecutable</key>
     <string>RadialDrop</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.local.radialdrop</string>
     <key>CFBundleInfoDictionaryVersion</key>
@@ -40,9 +47,9 @@ cat <<EOF > "$CONTENTS_DIR/Info.plist"
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.1</string>
+    <string>1.0.2</string>
     <key>CFBundleVersion</key>
-    <string>2</string>
+    <string>3</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
